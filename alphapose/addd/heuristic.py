@@ -3,6 +3,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib import patches
 import pandas as pd
+import copy
 
 THRESHOLD_DICT = {'confidence_threshold': 0.6, 
                   'score_threshold': 1.0,
@@ -12,6 +13,15 @@ THRESHOLD_DICT = {'confidence_threshold': 0.6,
                   'max_knee_angle_threshold': 40,
                  'eye_dist_ratio_threshold': 0.10}
 
+TEMPLATE = {'idx': -1,
+                    'valid_idx':False,
+                    'image_id_list':None,
+                    'image_results':None,
+                    'T_total':0,
+                    'T_valid':0,
+                    'T_front':0,
+                    'T_attention':0,
+                    'T_sit':0}
 def angle(a, b, c):
     ba = a - b
     bc = c - b
@@ -94,24 +104,22 @@ def viewer_detection(df_pose, image_size, fps, min_keeping_frame=0.3, threshold_
         max_idx = max(max_idx, idx[0])
 
     for idx in range(1, int(max_idx)+1):
-        template = {'idx': idx,
-                    'valid_idx':False,
-                    'image_id_list':None,
-                    'image_results':None,
-                    'T_total':0,
-                    'T_valid':0.,
-                    'T_front':0.,
-                    'T_attention':0.,
-                    'T_sit':0.}
-        
+        template = copy.deepcopy(TEMPLATE)
         data = df_hit_miss(df_pose, idx)
+        template['idx'] = idx
+        
         if not data.empty:
           result = np.array(list(data.apply(pose_analysis, axis=1, image_size=image_size, **threshold_dict)))
 
           ## smoothing
-          result[:, 1] = smoothing(result[:, 1], min_keeping_frame) * result[:, 0]
-          result[:, 2] = smoothing(result[:, 2], min_keeping_frame) * result[:, 1]
-          result[:, 3] = smoothing(result[:, 3], min_keeping_frame) * result[:, 0]
+          #result[:, 1] = smoothing(result[:, 1], min_keeping_frame) * result[:, 0]
+          #result[:, 2] = smoothing(result[:, 2], min_keeping_frame) * result[:, 1]
+          #result[:, 3] = smoothing(result[:, 3], min_keeping_frame) * result[:, 0]
+          
+          result[:, 1] = result[:, 1] * result[:, 0]
+          result[:, 2] = result[:, 2] * result[:, 1]
+          result[:, 3] = result[:, 3] * result[:, 0]
+          
           
           F_total = len(result)
           F_valid = np.sum(result[:, 0])

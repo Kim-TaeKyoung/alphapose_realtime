@@ -11,6 +11,10 @@ import torch.multiprocessing as mp
 from alphapose.utils.transforms import get_func_heatmap_to_coord
 from alphapose.utils.pPose_nms import pose_nms, write_json
 
+from alphapose.addd.heuristic import viewer_detection
+import pandas as pd
+import json
+
 DEFAULT_VIDEO_SAVE_OPT = {
     'savepath': 'examples/res/1.mp4',
     'fourcc': cv2.VideoWriter_fourcc(*'mp4v'),
@@ -22,12 +26,14 @@ EVAL_JOINTS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
 
 
 class DataWriter():
-    def __init__(self, cfg, opt, save_video=False,
+    def __init__(self, cfg, opt, fps, save_video=False,
                  video_save_opt=DEFAULT_VIDEO_SAVE_OPT,
                  queueSize=1024):
         self.cfg = cfg
         self.opt = opt
         self.video_save_opt = video_save_opt
+
+        self.fps = fps
 
         self.eval_joints = EVAL_JOINTS
         self.save_video = save_video
@@ -63,6 +69,8 @@ class DataWriter():
 
     def update(self):
         final_result = []
+        final_result_lookalike = []
+
         norm_type = self.cfg.LOSS.get('NORM_TYPE', None)
         hm_size = self.cfg.DATA_PRESET.HEATMAP_SIZE
         if self.save_video:
@@ -76,6 +84,7 @@ class DataWriter():
                 self.video_save_opt['savepath'] = self.video_save_opt['savepath'][:-4] + _ext
                 stream = cv2.VideoWriter(*[self.video_save_opt[k] for k in ['savepath', 'fourcc', 'fps', 'frameSize']])
             assert stream.isOpened(), 'Cannot open video for writing'
+            print(self.video_save_opt)
         # keep looping infinitelyd
         while True:
             # ensure the queue is not empty and get item
@@ -85,6 +94,15 @@ class DataWriter():
                 if self.save_video:
                     stream.release()
                 write_json(final_result, self.opt.outputpath, form=self.opt.format, for_eval=self.opt.eval)
+                
+                # === Modified : Heuristic Json Saving ===
+                df_pose = pd.DataFrame.from_dict(final_result_lookalike)
+                heuristic_result = viewer_detection(df_pose, 
+                  self.video_save_opt['frameSize'],
+                  self.fps)
+                heuristic_result.to_csv(os.path.join(self.opt.outputpath, '_heuristic'))
+                # === Heuristic Json Saving end ===
+
                 print("Results have been written to json.")
                 return
             # image channel RGB->BGR
@@ -115,15 +133,31 @@ class DataWriter():
                         pose_nms(boxes, scores, ids, preds_img, preds_scores, self.opt.min_box_area)
 
                 _result = []
+                
                 for k in range(len(scores)):
                     _result.append(
                         {
                             'keypoints':preds_img[k],
                             'kp_score':preds_scores[k],
                             'proposal_score': torch.mean(preds_scores[k]) + scores[k] + 1.25 * max(preds_scores[k]),
-                            'idx':ids[k],
-                            'box':[boxes[k][0], boxes[k][1], boxes[k][2]-boxes[k][0],boxes[k][3]-boxes[k][1]] 
+                            'idx': ids[k],
+                            'box': [boxes[k][0], boxes[k][1], boxes[k][2]-boxes[k][0],boxes[k][3]-boxes[k][1]] 
                         }
+                    )
+                    # Modified : ===Reformation to Heuristic JSON===
+                    # Why : Final json keypoints consists of (keypoints and kp_score).
+                    #       concatenate was needed
+                    # TODO: Where is category_id?
+
+                    final_result_lookalike.append(
+                      {
+                        'image_id' : im_name.split('.')[0],
+                        'category_id' : 1,
+                        'keypoints': torch.cat((preds_img[k], preds_scores[k]), dim=1),
+                        'score' : torch.mean(preds_scores[k]) + scores[k] + 1.25 * max(preds_scores[k]),
+                        'box': [boxes[k][0], boxes[k][1], boxes[k][2]-boxes[k][0],boxes[k][3]-boxes[k][1]],
+                        'idx': ids[k],
+                      }
                     )
 
                 result = {
@@ -131,6 +165,19 @@ class DataWriter():
                     'result': _result
                 }
 
+                if len(final_result_lookalike):
+                    df_pose = pd.DataFrame.from_dict(final_result_lookalike)
+                    heuristic_result = viewer_detection(df_pose, 
+                        self.video_save_opt['frameSize'],
+                        self.fps)
+                    if (heuristic_result['T_attention'] > 3).any():
+                        # PLAY CALL
+                        print('Found')
+                    final_result_lookalike.clear()
+                
+                #_heuristic_result = viewer_detection(_result_final_lookalike, self.video_save_opt['frameSize'])
+                # heuristic_result.append[_result_final_lookalike)
+                # ===Heuristic Route end===
 
                 if self.opt.pose_flow:
                     poseflow_result = self.pose_flow_wrapper.step(orig_img, result)
@@ -146,6 +193,7 @@ class DataWriter():
                     else:
                         from alphapose.utils.vis import vis_frame
                     img = vis_frame(orig_img, result, self.opt)
+                    # TODO : Visualization Goes Here
                     self.write_image(img, im_name, stream=stream if self.save_video else None)
 
     def write_image(self, img, im_name, stream=None):

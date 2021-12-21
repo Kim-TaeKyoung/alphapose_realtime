@@ -7,6 +7,7 @@ import numpy as np
 
 import torch
 import torch.multiprocessing as mp
+import time
 
 from alphapose.utils.presets import SimpleTransform
 
@@ -17,8 +18,10 @@ class WebCamDetectionLoader():
         self.opt = opt
 
         stream = cv2.VideoCapture(int(input_source))
+        stream.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        print(input_source)
         assert stream.isOpened(), 'Cannot capture source'
-        self.path = input_source
+        self.path = int(input_source)
         self.fourcc = int(stream.get(cv2.CAP_PROP_FOURCC))
         self.fps = stream.get(cv2.CAP_PROP_FPS)
         self.frameSize = (int(stream.get(cv2.CAP_PROP_FRAME_WIDTH)), int(stream.get(cv2.CAP_PROP_FRAME_HEIGHT)))

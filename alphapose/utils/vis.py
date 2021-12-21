@@ -5,6 +5,8 @@ import cv2
 import numpy as np
 import torch
 
+from datetime import datetime
+
 RED = (0, 0, 255)
 GREEN = (0, 255, 0)
 BLUE = (255, 0, 0)
@@ -127,7 +129,8 @@ def vis_frame_fast(frame, im_res, opt, format='coco'):
             kp_preds = torch.cat((kp_preds, torch.unsqueeze((kp_preds[5, :] + kp_preds[6, :]) / 2, 0)))
             kp_scores = torch.cat((kp_scores, torch.unsqueeze((kp_scores[5, :] + kp_scores[6, :]) / 2, 0)))
         if opt.pose_track or opt.tracking:
-            color = get_color_fast(int(abs(human['idx'])))
+            #color = get_color_fast(int(abs(human['idx'])))
+            color = RED
         else:
             color = BLUE
 
@@ -163,18 +166,36 @@ def vis_frame_fast(frame, im_res, opt, format='coco'):
             else:
                 cv2.circle(img, (cor_x, cor_y), 1, (255,255,255), 2)
         # Draw limbs
+
+        if 'box' in human.keys():
+            bbox = human['box']
+            bbox = [bbox[0], bbox[0]+bbox[2], bbox[1], bbox[1]+bbox[3]]#xmin,xmax,ymin,ymax
+
+        x_length = bbox[1] - bbox[0]
+        y_length = bbox[3] - bbox[2]
+
+        height, width, _ = img.shape
+
+        xy_ratio = (x_length * y_length) / (width * height)
+
         for i, (start_p, end_p) in enumerate(l_pair):
             if start_p in part_line and end_p in part_line:
                 start_xy = part_line[start_p]
                 end_xy = part_line[end_p]
                 if i < len(line_color):
                     if opt.tracking:
-                        cv2.line(img, start_xy, end_xy, color, 2 * int(kp_scores[start_p] + kp_scores[end_p]) + 1)
+                        cv2.line(img, 
+                        start_xy, 
+                        end_xy, 
+                        color, 
+                        2 * int(kp_scores[start_p] + kp_scores[end_p] + 1 + (350 * xy_ratio)))
                     else:
                         cv2.line(img, start_xy, end_xy, line_color[i], 2 * int(kp_scores[start_p] + kp_scores[end_p]) + 1)
                 else:
-                    cv2.line(img, start_xy, end_xy, (255,255,255), 1)  
+                    cv2.line(img, start_xy, end_xy, (255,255,255), 1)
 
+    #img = cv2.putText(img, datetime.today().strftime("%Y-%m-%d %H:%M:%S"), \
+    #                  (0, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 1)
     return img
 
 
@@ -276,7 +297,8 @@ def vis_frame(frame, im_res, opt, format='coco'):
             kp_preds = torch.cat((kp_preds, torch.unsqueeze((kp_preds[5, :] + kp_preds[6, :]) / 2, 0)))
             kp_scores = torch.cat((kp_scores, torch.unsqueeze((kp_scores[5, :] + kp_scores[6, :]) / 2, 0)))
         if opt.tracking:
-            color = get_color_fast(int(abs(human['idx'])))
+            #color = get_color_fast(int(abs(human['idx'])))
+            color = RED
         else:
             color = BLUE
 
